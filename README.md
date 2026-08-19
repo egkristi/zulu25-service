@@ -159,9 +159,27 @@ For Docker Compose ligger det en `/dev/tcp`-basert healthcheck i `docker-compose
 ## Testing
 
 `ServerTest` starter den ekte serveren på en efemer port og snakker HTTP mot den
-med `java.net.http.HttpClient` – ruting, statuskoder og JSON-encoding dekkes ende
-til ende. Testene kjører som del av image-bygget, så et image kan ikke produseres
-fra kode som ikke passerer. Hopp over ved behov:
+med `java.net.http.HttpClient` – ruting, statuskoder, headere, HEAD-requests,
+lengdegrenser og samtidige requests på virtuelle tråder dekkes ende til ende.
+`JsonTest`, `BuildInfoTest` og `LogTest` dekker de resterende klassene som
+unit-tester. `Application` (oppstart/shutdown-hook/`main`) er bevisst ikke
+enhetstestet – den blokkerer på et shutdown-signal og leser miljøvariabler som
+ikke lar seg endre for en kjørende JVM, så dette dekkes best av et
+subprosess-basert integrasjonstestoppsett hvis det trengs senere.
+
+`SecurityTest` dekker det som ikke er ren funksjonalitet: ugyldig prosent-encoding
+(sendt over en rå socket, siden `java.net.URI` selv nekter å konstruere slike
+URI-er), at anførselstegn/CRLF/script-tags i `?name=` aldri bryter ut av det
+JSON-escapede body-feltet eller havner i en response-header, at alle
+skriveoperasjoner (`PUT`/`DELETE`/`PATCH`/`OPTIONS`/vilkårlige verb) avvises på
+alle ruter, at feilresponser ikke lekker stack traces eller pakkenavn, og at en
+overstor request-body avvises (413) i stedet for å bufres ubegrenset i minnet
+– se `Server.MAX_REQUEST_BODY_BYTES`.
+
+`mvn verify` genererer en JaCoCo-dekningsrapport i `target/site/jacoco/index.html`
+(ingen minimumsterskel håndheves, kun rapportering). Testene kjører som del av
+image-bygget, så et image kan ikke produseres fra kode som ikke passerer. Hopp
+over ved behov:
 
 ```bash
 docker build --build-arg SKIP_TESTS=true -t zulu25-service:dev .
@@ -173,13 +191,32 @@ docker build --build-arg SKIP_TESTS=true -t zulu25-service:dev .
 
 | Jobb           | Gjør hva                                                                 |
 |----------------|---------------------------------------------------------------------------|
-| `test`         | `mvn clean verify` på Azul Zulu 25, laster opp `app.jar` som artifact      |
-| `image`        | Bygger og pusher multi-arch (`amd64`/`arm64`) image til GHCR med buildx – kun på push, ikke på PR |
+| `test`         | `mvn clean verify` på Azul Zulu 25, laster opp `app.jar` og JaCoCo-rapporten som artifacts |
+| `image`        | Bygger og pusher multi-arch (`amd64`/`arm64`) image til GHCR med buildx, genererer SBOM, Trivy-skanner for sårbarheter (SARIF til Security-fanen) og signerer imaget keyless med cosign – kun på push, ikke på PR |
+| `release`      | Kun på `v*`-tagger: oppretter et GitHub Release med `app.jar` vedlagt og auto-genererte notater |
 | `devcontainer` | Bygger `.devcontainer/Dockerfile` med `@devcontainers/cli` – fanger opp at devcontaineren råtner (apt-pakker, base-image) uten å kreve Podman på runneren |
 
 `devcontainer`-jobben kjører kun `devcontainer build` (image-steget), ikke `up` –
 dermed testes aldri containerens kjøretids-mounts (socket-oppsettet) på selve
 GitHub-runneren, som uansett bare har Docker.
+
+Trivy-skanningen er rapporterende (`exit-code: "0"`) – den stopper ikke bygget på
+CVE-er i base-imaget, bare synliggjør dem under *Security → Code scanning*. Bytt
+til `"1"` i `ci.yml` når du vil at den skal blokkere merge. Signaturen kan
+verifiseres med `cosign verify --certificate-identity-regexp='.*' --certificate-oidc-issuer=https://token.actions.githubusercontent.com <image>@<digest>`.
+
+`.github/workflows/codeql.yml` kjører GitHub sin egen SAST-analyse (CodeQL) på
+push, PR og ukentlig – ingen ekstra hemmeligheter nødvendig.
+
+`.github/workflows/deploy.yml` er CD-delen: en manuelt utløst (`workflow_dispatch`)
+jobb som patcher image-taggen i `deploy/k8s/kustomization.yaml` og kjører
+`kubectl apply -k`. Den er bevisst ikke koblet til et ekte cluster ut av boksen –
+du må selv opprette et `production`-miljø (`Settings → Environments`, gjerne med
+required reviewers) og legge inn en `KUBE_CONFIG`-hemmelighet (base64-enkodet
+kubeconfig) før den gjør noe.
+
+`.github/dependabot.yml` holder Maven-plugins, GitHub Actions-versjoner og
+base-images i `Dockerfile`/`.devcontainer/Dockerfile` oppdatert ukentlig.
 
 ## Utviklingsmiljø
 
@@ -222,7 +259,10 @@ Detaljene ligger i [`docs/PODMAN-VSCODE.md`](docs/PODMAN-VSCODE.md).
 ├── .devcontainer/          # dev container på azul-zulu:25
 ├── deploy/k8s/             # Deployment, Service, PDB, kustomization
 ├── deploy/systemd/         # Podman Quadlet-unit
-├── .github/workflows/ci.yml
+├── .github/workflows/ci.yml       # test, image (build/scan/sign), release, devcontainer
+├── .github/workflows/codeql.yml   # SAST
+├── .github/workflows/deploy.yml   # manuell CD mot Kubernetes
+├── .github/dependabot.yml
 └── src/
     ├── main/java/no/egk/demo/
     │   ├── Application.java   # oppstart, config, graceful shutdown

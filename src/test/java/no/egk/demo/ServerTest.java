@@ -11,6 +11,10 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -97,6 +101,95 @@ class ServerTest {
         HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
         assertEquals(405, response.statusCode());
         assertEquals("GET, HEAD", response.headers().firstValue("allow").orElseThrow());
+    }
+
+    @Test
+    @DisplayName("non-GET methods are rejected on the root path too")
+    void rootRejectsNonGetMethods() throws Exception {
+        HttpRequest request = HttpRequest.newBuilder(uri("/"))
+                .POST(HttpRequest.BodyPublishers.ofString("{}"))
+                .build();
+        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+        assertEquals(405, response.statusCode());
+        assertEquals("GET, HEAD", response.headers().firstValue("allow").orElseThrow());
+    }
+
+    @Test
+    @DisplayName("HEAD / returns headers but no body")
+    void headRootReturnsNoBody() throws Exception {
+        HttpRequest request = HttpRequest.newBuilder(uri("/")).method("HEAD", HttpRequest.BodyPublishers.noBody()).build();
+        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, response.statusCode());
+        assertEquals("application/json; charset=utf-8", response.headers().firstValue("content-type").orElseThrow());
+        assertTrue(response.body().isEmpty(), response.body());
+    }
+
+    @Test
+    @DisplayName("HEAD /api/greet returns headers but no body")
+    void headGreetReturnsNoBody() throws Exception {
+        HttpRequest request = HttpRequest.newBuilder(uri("/api/greet")).method("HEAD", HttpRequest.BodyPublishers.noBody()).build();
+        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, response.statusCode());
+        assertTrue(response.body().isEmpty(), response.body());
+    }
+
+    @Test
+    @DisplayName("a name at exactly the length limit is accepted")
+    void nameAtMaxLengthIsAccepted() throws Exception {
+        String name = "a".repeat(100);
+        HttpResponse<String> response = get("/api/greet?name=" + name);
+        assertEquals(200, response.statusCode());
+        assertTrue(response.body().contains("Hei, " + name + "!"), response.body());
+    }
+
+    @Test
+    @DisplayName("a name over the length limit is rejected with 400")
+    void nameOverMaxLengthIsRejected() throws Exception {
+        String name = "a".repeat(101);
+        HttpResponse<String> response = get("/api/greet?name=" + name);
+        assertEquals(400, response.statusCode());
+        assertTrue(response.body().contains("name is too long"), response.body());
+    }
+
+    @Test
+    @DisplayName("responses carry cache and content-type safety headers")
+    void responsesSetSafetyHeaders() throws Exception {
+        HttpResponse<String> response = get("/");
+        assertEquals("no-store", response.headers().firstValue("cache-control").orElseThrow());
+        assertEquals("nosniff", response.headers().firstValue("x-content-type-options").orElseThrow());
+    }
+
+    @Test
+    @DisplayName("paths nested under /api/greet are handled the same as the exact path")
+    void nestedGreetPathIsHandled() throws Exception {
+        // com.sun.net.httpserver routes contexts by longest-prefix match, and unlike
+        // handleRoot, handleGreet does not reject sub-paths - documenting that here.
+        HttpResponse<String> response = get("/api/greet/anything?name=Nested");
+        assertEquals(200, response.statusCode());
+        assertTrue(response.body().contains("Hei, Nested!"), response.body());
+    }
+
+    @Test
+    @DisplayName("the bound port is a real ephemeral port")
+    void portIsPositive() {
+        assertTrue(server.port() > 0, "expected a bound ephemeral port, got " + server.port());
+    }
+
+    @Test
+    @DisplayName("many concurrent requests on virtual threads all succeed")
+    void concurrentRequestsAllSucceed() throws Exception {
+        int count = 50;
+        List<CompletableFuture<HttpResponse<String>>> futures = new ArrayList<>();
+        for (int i = 0; i < count; i++) {
+            HttpRequest request = HttpRequest.newBuilder(uri("/api/greet?name=Req" + i)).GET().build();
+            futures.add(client.sendAsync(request, HttpResponse.BodyHandlers.ofString()));
+        }
+        CompletableFuture.allOf(futures.toArray(new CompletableFuture<?>[0])).get(10, TimeUnit.SECONDS);
+        for (int i = 0; i < count; i++) {
+            HttpResponse<String> response = futures.get(i).get();
+            assertEquals(200, response.statusCode());
+            assertTrue(response.body().contains("Hei, Req" + i + "!"), response.body());
+        }
     }
 
     private static HttpResponse<String> get(String path) throws Exception {

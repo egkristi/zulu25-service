@@ -1,0 +1,44 @@
+name: CD - Deploy to Kubernetes
+
+# Manual on purpose: this is scaffolding, not wired to a real cluster by default.
+# Before running it:
+#   1. Create a "production" environment (Settings -> Environments) - add required
+#      reviewers there if you want an approval gate.
+#   2. Add a KUBE_CONFIG secret (base64-encoded kubeconfig) to that environment,
+#      scoped to a service account that can only touch this app's namespace.
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Image tag to deploy (matches a tag already pushed to GHCR)"
+        required: true
+        default: latest
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v4
+
+      - name: Configure kubeconfig
+        run: |
+          install -d -m 700 "$HOME/.kube"
+          echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > "$HOME/.kube/config"
+          chmod 600 "$HOME/.kube/config"
+
+      - name: Set the image tag to deploy
+        env:
+          IMAGE_TAG: ${{ inputs.image_tag }}
+        run: |
+          sed -i "s|newTag: .*|newTag: ${IMAGE_TAG}|" deploy/k8s/kustomization.yaml
+
+      # kubectl has built-in Kustomize support (-k) since 1.14, no separate binary needed.
+      - name: Apply manifests
+        run: kubectl apply -k deploy/k8s
+
+      - name: Wait for rollout
+        run: kubectl rollout status deployment/zulu25-service --timeout=180s

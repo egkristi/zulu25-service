@@ -6,6 +6,7 @@ import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpServer;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
@@ -37,6 +38,10 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public final class Server implements AutoCloseable {
 
     private static final int MAX_NAME_LENGTH = 100;
+
+    // No route on this service reads the request body; the cap only exists so an
+    // untrusted client can't force unbounded memory use via readAllBytes().
+    private static final int MAX_REQUEST_BODY_BYTES = 65_536;
 
     private final HttpServer http;
     private final ExecutorService executor;
@@ -161,21 +166,42 @@ public final class Server implements AutoCloseable {
     }
 
     private static void respondJson(HttpExchange exchange, int status, Map<String, ?> body) throws IOException {
-        byte[] payload = (Json.object(body) + "\n").getBytes(StandardCharsets.UTF_8);
         try (exchange) {
-            // Drain the request body so the connection can be reused.
-            exchange.getRequestBody().readAllBytes();
+            if (!drainRequestBody(exchange)) {
+                writeResponse(exchange, 413, Json.object(Map.of("error", "request body too large")));
+                return;
+            }
+            writeResponse(exchange, status, Json.object(body));
+        }
+    }
 
-            exchange.getResponseHeaders().set("Content-Type", "application/json; charset=utf-8");
-            exchange.getResponseHeaders().set("Cache-Control", "no-store");
-            exchange.getResponseHeaders().set("X-Content-Type-Options", "nosniff");
-
-            boolean head = "HEAD".equalsIgnoreCase(exchange.getRequestMethod());
-            exchange.sendResponseHeaders(status, head ? -1 : payload.length);
-            if (!head) {
-                try (OutputStream out = exchange.getResponseBody()) {
-                    out.write(payload);
+    /** Reads and discards up to {@link #MAX_REQUEST_BODY_BYTES}; returns false if the body exceeds it. */
+    private static boolean drainRequestBody(HttpExchange exchange) throws IOException {
+        try (InputStream in = exchange.getRequestBody()) {
+            byte[] buffer = new byte[8192];
+            long total = 0;
+            int read;
+            while ((read = in.read(buffer)) != -1) {
+                total += read;
+                if (total > MAX_REQUEST_BODY_BYTES) {
+                    return false;
                 }
+            }
+        }
+        return true;
+    }
+
+    private static void writeResponse(HttpExchange exchange, int status, String json) throws IOException {
+        byte[] payload = (json + "\n").getBytes(StandardCharsets.UTF_8);
+        exchange.getResponseHeaders().set("Content-Type", "application/json; charset=utf-8");
+        exchange.getResponseHeaders().set("Cache-Control", "no-store");
+        exchange.getResponseHeaders().set("X-Content-Type-Options", "nosniff");
+
+        boolean head = "HEAD".equalsIgnoreCase(exchange.getRequestMethod());
+        exchange.sendResponseHeaders(status, head ? -1 : payload.length);
+        if (!head) {
+            try (OutputStream out = exchange.getResponseBody()) {
+                out.write(payload);
             }
         }
     }
@@ -188,12 +214,21 @@ public final class Server implements AutoCloseable {
         for (String pair : query.split("&")) {
             int eq = pair.indexOf('=');
             String rawKey = eq < 0 ? pair : pair.substring(0, eq);
-            if (key.equals(URLDecoder.decode(rawKey, StandardCharsets.UTF_8))) {
+            if (key.equals(decode(rawKey))) {
                 String rawValue = eq < 0 ? "" : pair.substring(eq + 1);
-                return Optional.of(URLDecoder.decode(rawValue, StandardCharsets.UTF_8));
+                return Optional.ofNullable(decode(rawValue));
             }
         }
         return Optional.empty();
+    }
+
+    /** Malformed percent-encoding must never crash a handler - treat it as absent instead. */
+    private static String decode(String raw) {
+        try {
+            return URLDecoder.decode(raw, StandardCharsets.UTF_8);
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
     }
 
     private static String hostname() {

@@ -1,10 +1,14 @@
-name: build
+name: CI/CD
 
 on:
   push:
     branches: [main]
     tags: ["v*"]
   pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   REGISTRY: ghcr.io
@@ -32,12 +36,20 @@ jobs:
           name: app-jar
           path: target/app.jar
 
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: jacoco-report
+          path: target/site/jacoco
+
   image:
     runs-on: ubuntu-latest
     needs: test
     permissions:
-      contents: read
-      packages: write
+      contents: write        # gh release create + sbom-action artifact uploads
+      packages: write        # push to GHCR
+      security-events: write # upload Trivy SARIF to the Security tab
+      id-token: write        # cosign keyless signing via GitHub OIDC
     steps:
       - uses: actions/checkout@v4
 
@@ -58,6 +70,7 @@ jobs:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
 
       - name: Build and push
+        id: build
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -69,6 +82,77 @@ jobs:
             VCS_REF=${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      # Everything below only makes sense once an image has actually been pushed,
+      # which build-push-action skips for pull_request events (see push: above).
+      - name: Generate SBOM
+        if: github.event_name != 'pull_request'
+        uses: anchore/sbom-action@v0
+        with:
+          image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}
+          format: spdx-json
+          artifact-name: sbom.spdx.json
+
+      # Report-only by default (exit-code 0): visible in the Security tab without
+      # breaking builds on upstream base-image CVEs a template consumer can't fix
+      # immediately. Set exit-code to '1' once you want it to gate merges.
+      - name: Scan image for vulnerabilities
+        if: github.event_name != 'pull_request'
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}
+          format: sarif
+          output: trivy-results.sarif
+          severity: CRITICAL,HIGH
+          exit-code: "0"
+
+      - name: Upload scan results to the Security tab
+        if: github.event_name != 'pull_request'
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: trivy-results.sarif
+
+      - name: Install cosign
+        if: github.event_name != 'pull_request'
+        uses: sigstore/cosign-installer@v4.1.2
+
+      # Keyless signing via GitHub's OIDC token - no key material to manage or leak.
+      # Verify with: cosign verify --certificate-identity-regexp='.*' \
+      #   --certificate-oidc-issuer=https://token.actions.githubusercontent.com <image>@<digest>
+      - name: Sign the image
+        if: github.event_name != 'pull_request'
+        env:
+          TAGS: ${{ steps.meta.outputs.tags }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          images=""
+          for tag in ${TAGS}; do
+            images+="${tag}@${DIGEST} "
+          done
+          cosign sign --yes ${images}
+
+  release:
+    runs-on: ubuntu-latest
+    needs: [test, image]
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download jar artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: app-jar
+          path: dist
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ github.ref_name }}" dist/app.jar \
+            --title "${{ github.ref_name }}" \
+            --generate-notes
 
   devcontainer:
     runs-on: ubuntu-latest
