@@ -2,6 +2,12 @@
   "version": "2.0.0",
   "tasks": [
     {
+      "label": "tmp: git",
+      "type": "shell",
+      "command": "cd /workspace && git add -A && git commit -m 'Harden CI/CD: least-privilege job permissions, Trivy SARIF category, clearer deploy.yml failure on missing KUBE_CONFIG' && git push",
+      "problemMatcher": []
+    },
+    {
       "label": "maven: verify",
       "type": "shell",
       "command": "mvn -B -ntp clean verify",
