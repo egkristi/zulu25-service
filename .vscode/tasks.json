@@ -2,9 +2,9 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "tmp: git",
+      "label": "tmp: diag",
       "type": "shell",
-      "command": "cd /workspace && git add -A && git commit -m 'Fix devcontainer CI: docker-outside-of-docker moby packages unavailable on Debian trixie' && git push",
+      "command": "cd /workspace && git add -A && git commit -m 'Suppress false-positive resource-leak warning on Application.main' && git push",
       "problemMatcher": []
     },
     {

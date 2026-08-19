@@ -15,6 +15,8 @@ public final class Application {
     private Application() {
     }
 
+    // server is closed via the shutdown hook's server.stop(grace), not in this method - it must outlive main().
+    @SuppressWarnings("resource")
     public static void main(String[] args) throws InterruptedException {
         int port = intEnv("PORT", 8080);
         Duration grace = Duration.ofSeconds(intEnv("SHUTDOWN_GRACE_SECONDS", 10));
