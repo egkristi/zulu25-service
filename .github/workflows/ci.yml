@@ -31,13 +31,13 @@ jobs:
         run: mvn -B -ntp clean verify
 
       - name: Upload jar
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: app-jar
           path: target/app.jar
 
       - name: Upload coverage report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: jacoco-report
           path: target/site/jacoco
