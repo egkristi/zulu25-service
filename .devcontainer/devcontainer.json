@@ -16,7 +16,12 @@
   // container runtime inside this one. link-container-socket.sh (host-side)
   // finds it; the mount below feeds it to the feature's expected path.
   "features": {
-    "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {}
+    "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {
+      // Default (moby=true) installs Debian's native "moby" packages, which
+      // don't exist for trixie (this image's base OS) - fall back to the
+      // upstream Docker CE apt repo instead.
+      "moby": false
+    }
   },
   "initializeCommand": "bash .devcontainer/link-container-socket.sh",
   "mounts": [
