@@ -2,12 +2,6 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "tmp: git diagnostics",
-      "type": "shell",
-      "command": "cd /workspace && git add -A && git commit --amend -m 'Initial commit' && echo '--- log ---' && git log --oneline -1 --stat",
-      "problemMatcher": []
-    },
-    {
       "label": "maven: verify",
       "type": "shell",
       "command": "mvn -B -ntp clean verify",
