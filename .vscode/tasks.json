@@ -4,7 +4,7 @@
     {
       "label": "tmp: diag",
       "type": "shell",
-      "command": "cd /workspace && git add -A && git commit -m 'Suppress false-positive resource-leak warning on Application.main' && git push",
+      "command": "cd /workspace && git add -A && git commit -m 'chore: remove temp task' && git push",
       "problemMatcher": []
     },
     {
