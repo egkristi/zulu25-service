@@ -1,0 +1,16 @@
+# Keep the build context tiny and the layer cache stable
+target/
+**/target/
+.git/
+.github/
+.idea/
+*.iml
+.vscode/
+.devcontainer/
+deploy/
+docs/
+*.md
+!README.md
+.DS_Store
+*.log
+.env

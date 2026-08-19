@@ -1,0 +1,73 @@
+# syntax=docker/dockerfile:1
+#
+# Optional slim variant: a jlink'ed runtime containing only the modules this
+# service actually uses (~50-70 MB smaller than the -jre-headless image, and a
+# correspondingly smaller CVE surface).
+#
+#   docker build -f Dockerfile.jlink -t zulu25-service:1.0.0-slim .
+#
+# Note: the runtime is built from the Zulu 25 JDK and copied onto a plain Debian
+# base, so glibc versions must match - hence debian:13-slim next to azul-zulu:25
+# (which is itself debian13-based).
+
+ARG JDK_IMAGE=docker.io/library/azul-zulu:25
+ARG BASE_IMAGE=docker.io/library/debian:13-slim
+ARG MAVEN_IMAGE=docker.io/library/maven:3.9-eclipse-temurin-21
+
+
+FROM ${MAVEN_IMAGE} AS maven-dist
+
+
+FROM ${JDK_IMAGE} AS builder
+
+COPY --from=maven-dist /usr/share/maven /opt/maven
+ENV PATH="/opt/maven/bin:${PATH}"
+WORKDIR /workspace
+
+COPY pom.xml ./
+RUN --mount=type=cache,target=/root/.m2 \
+    mvn -B -ntp -DskipTests dependency:go-offline
+
+COPY src ./src
+ARG SKIP_TESTS=false
+RUN --mount=type=cache,target=/root/.m2 \
+    mvn -B -ntp -DskipTests=${SKIP_TESTS} clean verify
+
+# jdk.httpserver holds com.sun.net.httpserver; jdk.management + jdk.jfr keep
+# JFR and JMX-style diagnostics available in production. Verify the list with:
+#   jdeps --print-module-deps --ignore-missing-deps target/app.jar
+RUN jlink \
+      --add-modules java.base,java.logging,java.naming,jdk.httpserver,jdk.management,jdk.jfr,jdk.crypto.ec \
+      --strip-debug \
+      --no-header-files \
+      --no-man-pages \
+      --compress=zip-6 \
+      --output /javaruntime && \
+    /javaruntime/bin/java --version
+
+
+FROM ${BASE_IMAGE} AS runtime
+
+ARG APP_UID=10001
+LABEL org.opencontainers.image.title="zulu25-service" \
+      org.opencontainers.image.description="Java 25 service on a jlink'ed Azul Zulu runtime"
+
+ENV JAVA_HOME=/opt/java/runtime \
+    PATH="/opt/java/runtime/bin:${PATH}" \
+    APP_HOME=/app \
+    PORT=8080 \
+    JAVA_OPTS="-XX:MaxRAMPercentage=75.0 -XX:+ExitOnOutOfMemoryError -Dfile.encoding=UTF-8"
+
+RUN groupadd --system --gid ${APP_UID} app && \
+    useradd --system --uid ${APP_UID} --gid app --home-dir ${APP_HOME} --shell /usr/sbin/nologin app && \
+    mkdir -p ${APP_HOME} /opt/java && \
+    chown app:app ${APP_HOME}
+
+COPY --from=builder /javaruntime ${JAVA_HOME}
+COPY --from=builder --chown=app:app /workspace/target/app.jar ${APP_HOME}/app.jar
+
+WORKDIR ${APP_HOME}
+USER app
+EXPOSE 8080
+
+ENTRYPOINT ["/bin/sh", "-c", "exec java $JAVA_OPTS -jar /app/app.jar \"$@\"", "--"]

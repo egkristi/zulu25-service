@@ -1,0 +1,30 @@
+{
+  // Point the Java extension at a JDK 25. Adjust the path to your install:
+  //   macOS (Homebrew/SDKMAN): ~/.sdkman/candidates/java/25-zulu
+  //   Linux (Azul deb/rpm):    /usr/lib/jvm/zulu25
+  //   Windows:                 C:\\Program Files\\Zulu\\zulu-25
+  "java.configuration.runtimes": [
+    {
+      "name": "JavaSE-25",
+      "path": "${env:JAVA_HOME}",
+      "default": true
+    }
+  ],
+  "java.compile.nullAnalysis.mode": "automatic",
+  "java.configuration.updateBuildConfiguration": "automatic",
+  "java.format.settings.url": "https://raw.githubusercontent.com/google/styleguide/gh-pages/eclipse-java-google-style.xml",
+  "editor.formatOnSave": true,
+  "files.trimTrailingWhitespace": true,
+  "files.insertFinalNewline": true,
+  // Container Tools extension: use Podman instead of Docker.
+  // Older "Docker" extension (ms-azuretools.vscode-docker) uses docker.dockerPath.
+  "containers.containerClient": "com.microsoft.visualstudio.containers.podman",
+  "docker.dockerPath": "podman",
+  // Dev Containers with Podman
+  "dev.containers.dockerPath": "podman",
+  "dev.containers.dockerComposePath": "podman-compose",
+  "yaml.schemas": {
+    "kubernetes": "deploy/k8s/*.yaml"
+  },
+  "containers.containerCommand": "podman"
+}

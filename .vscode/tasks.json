@@ -1,0 +1,56 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "tmp: git diagnostics",
+      "type": "shell",
+      "command": "cd /workspace && git add -A && git commit --amend -m 'Initial commit' && echo '--- log ---' && git log --oneline -1 --stat",
+      "problemMatcher": []
+    },
+    {
+      "label": "maven: verify",
+      "type": "shell",
+      "command": "mvn -B -ntp clean verify",
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "problemMatcher": "$maven"
+    },
+    {
+      "label": "run: local jar",
+      "type": "shell",
+      "command": "java -jar target/app.jar",
+      "isBackground": true,
+      "problemMatcher": []
+    },
+    {
+      "label": "podman: build image",
+      "type": "shell",
+      "command": "podman build -t zulu25-service:dev .",
+      "problemMatcher": []
+    },
+    {
+      "label": "podman: run image",
+      "type": "shell",
+      "command": "podman run --rm -p 8080:8080 --name zulu25-service zulu25-service:dev",
+      "dependsOn": "podman: build image",
+      "isBackground": true,
+      "problemMatcher": []
+    },
+    {
+      "label": "podman: run image with debug port",
+      "type": "shell",
+      "command": "podman run --rm -p 8080:8080 -p 5005:5005 -e JAVA_OPTS='-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5005' zulu25-service:dev",
+      "dependsOn": "podman: build image",
+      "isBackground": true,
+      "problemMatcher": []
+    },
+    {
+      "label": "podman: stop",
+      "type": "shell",
+      "command": "podman stop zulu25-service || true",
+      "problemMatcher": []
+    }
+  ]
+}

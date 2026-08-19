@@ -1,0 +1,24 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "java",
+      "name": "Run zulu25-service",
+      "request": "launch",
+      "mainClass": "no.egk.demo.Application",
+      "projectName": "zulu25-service",
+      "env": {
+        "PORT": "8080",
+        "SHUTDOWN_DRAIN_SECONDS": "0"
+      },
+      "console": "internalConsole"
+    },
+    {
+      "type": "java",
+      "name": "Attach to container (port 5005)",
+      "request": "attach",
+      "hostName": "localhost",
+      "port": 5005
+    }
+  ]
+}

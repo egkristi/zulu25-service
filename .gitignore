@@ -1,0 +1,10 @@
+target/
+*.class
+*.jar
+!.mvn/wrapper/maven-wrapper.jar
+.idea/
+*.iml
+.devcontainer/.podman-socket/
+.DS_Store
+*.log
+.env

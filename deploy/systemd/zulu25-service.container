@@ -1,0 +1,35 @@
+# Podman Quadlet unit - rootless systemd service.
+#
+#   mkdir -p ~/.config/containers/systemd
+#   cp deploy/systemd/zulu25-service.container ~/.config/containers/systemd/
+#   systemctl --user daemon-reload
+#   systemctl --user start zulu25-service
+#   systemctl --user status zulu25-service
+#   journalctl --user -u zulu25-service -f
+#
+# Survive logout: loginctl enable-linger $USER
+
+[Unit]
+Description=zulu25-service (Java 25 on Azul Zulu)
+After=network-online.target
+
+[Container]
+Image=ghcr.io/egkristi/zulu25-service:1.0.0-SNAPSHOT
+ContainerName=zulu25-service
+PublishPort=8080:8080
+Environment=PORT=8080
+Environment=JAVA_OPTS=-XX:MaxRAMPercentage=75.0 -XX:+ExitOnOutOfMemoryError
+ReadOnly=true
+Tmpfs=/tmp
+NoNewPrivileges=true
+DropCapability=ALL
+HealthCmd=/bin/sh -c "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /readyz HTTP/1.0\\r\\n\\r\\n' >&3 && head -1 <&3 | grep -q 200"
+HealthInterval=10s
+HealthStartPeriod=15s
+
+[Service]
+Restart=always
+TimeoutStartSec=120
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,54 @@
+{
+  "name": "zulu25-service (Azul Zulu 25)",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+
+  // Rootless Podman only: "--userns=keep-id" is Podman-specific syntax (paired
+  // with dev.containers.dockerPath: podman in .vscode/settings.json) and maps
+  // the container user to your own UID so files created in the workspace stay
+  // writable on the host. Plain Docker does not understand this flag.
+  "runArgs": ["--userns=keep-id"],
+  "containerUser": "vscode",
+  "updateRemoteUserUID": true,
+
+  // SELinux (Fedora/RHEL) needs the :z relabel on the workspace mount.
+  "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind,Z",
+  "workspaceFolder": "/workspace",
+
+  // Podman-outside-of-Podman: link-podman-socket.sh (runs on the host) points a
+  // repo-local symlink at the host's rootless Podman API socket, bind-mounted
+  // below. Only the podman client is installed in the image (see Dockerfile),
+  // so `podman build`/`podman run` in an integrated terminal talk to the host
+  // engine instead of nesting a second container runtime inside this one.
+  "initializeCommand": "bash .devcontainer/link-podman-socket.sh",
+  "mounts": [
+    "source=${localWorkspaceFolder}/.devcontainer/.podman-socket/podman.sock,target=/run/podman-host.sock,type=bind"
+  ],
+  "containerEnv": {
+    "CONTAINER_HOST": "unix:///run/podman-host.sock"
+  },
+
+  "forwardPorts": [8080],
+  "portsAttributes": {
+    "8080": { "label": "zulu25-service", "onAutoForward": "notify" }
+  },
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "vscjava.vscode-java-pack",
+        "redhat.vscode-yaml",
+        "redhat.vscode-xml",
+        "editorconfig.editorconfig"
+      ],
+      "settings": {
+        "java.configuration.runtimes": [
+          { "name": "JavaSE-25", "path": "/usr/lib/jvm/zulu25", "default": true }
+        ]
+      }
+    }
+  },
+
+  "postCreateCommand": "mvn -B -ntp -DskipTests dependency:go-offline && (podman version >/dev/null 2>&1 && echo 'Podman (via host socket) is reachable.' || echo 'Podman socket not reachable yet - see docs/PODMAN-VSCODE.md (Dev container section).')"
+}
