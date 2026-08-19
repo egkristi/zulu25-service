@@ -2,6 +2,12 @@
   "version": "2.0.0",
   "tasks": [
     {
+      "label": "tmp: git",
+      "type": "shell",
+      "command": "cd /workspace && git add -A && git commit -m 'Make container tooling engine-agnostic (Docker-first, Podman optional); update docs' && git push",
+      "problemMatcher": []
+    },
+    {
       "label": "maven: verify",
       "type": "shell",
       "command": "mvn -B -ntp clean verify",

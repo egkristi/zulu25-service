@@ -39,7 +39,7 @@ make help                  # alle targets
 make image                 # bygg image med OCI-labels og versjon fra pom.xml
 make image ENGINE=podman   # samme bygg med podman
 make run-image             # bygg + kjør på :8080
-make run-podman            # bygg + kjør rootless med podman
+make run-image ENGINE=podman  # bygg + kjør rootless med podman
 make smoke                 # treff endepunktene
 make deploy                # kubectl apply -k deploy/k8s
 ```
@@ -167,12 +167,29 @@ fra kode som ikke passerer. Hopp over ved behov:
 docker build --build-arg SKIP_TESTS=true -t zulu25-service:dev .
 ```
 
+## CI/CD
+
+`.github/workflows/ci.yml` kjører på hver push/PR mot `main` og på `v*`-tagger:
+
+| Jobb           | Gjør hva                                                                 |
+|----------------|---------------------------------------------------------------------------|
+| `test`         | `mvn clean verify` på Azul Zulu 25, laster opp `app.jar` som artifact      |
+| `image`        | Bygger og pusher multi-arch (`amd64`/`arm64`) image til GHCR med buildx – kun på push, ikke på PR |
+| `devcontainer` | Bygger `.devcontainer/Dockerfile` med `@devcontainers/cli` – fanger opp at devcontaineren råtner (apt-pakker, base-image) uten å kreve Podman på runneren |
+
+`devcontainer`-jobben kjører kun `devcontainer build` (image-steget), ikke `up` –
+dermed testes aldri containerens kjøretids-mounts (socket-oppsettet) på selve
+GitHub-runneren, som uansett bare har Docker.
+
 ## Utviklingsmiljø
 
 `.vscode/` inneholder anbefalte utvidelser, Java 25-runtime, launch-config for
 lokal kjøring og remote debug (JDWP på 5005), og tasks for `mvn verify` og
-podman build/run. `.devcontainer/` gir hele toolchainen i en container basert på
-`azul-zulu:25` hvis du heller vil ha den der enn på laptopen.
+podman build/run (bytt `podman` mot `docker` i tasken om du foretrekker det).
+`.devcontainer/` gir hele toolchainen i en container basert på `azul-zulu:25`
+hvis du heller vil ha den der enn på laptopen – den snakker med hvilken som
+helst Docker-API-kompatibel motor på hosten (Docker, Podman, ...) via
+Docker-outside-of-Docker, uten å tvinge noe valg.
 `deploy/systemd/zulu25-service.container` er en Podman Quadlet-unit for å kjøre
 tjenesten som rootless systemd-service uten Kubernetes.
 

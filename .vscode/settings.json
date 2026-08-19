@@ -16,15 +16,10 @@
   "editor.formatOnSave": true,
   "files.trimTrailingWhitespace": true,
   "files.insertFinalNewline": true,
-  // Container Tools extension: use Podman instead of Docker.
-  // Older "Docker" extension (ms-azuretools.vscode-docker) uses docker.dockerPath.
-  "containers.containerClient": "com.microsoft.visualstudio.containers.podman",
-  "docker.dockerPath": "podman",
-  // Dev Containers with Podman
-  "dev.containers.dockerPath": "podman",
-  "dev.containers.dockerComposePath": "podman-compose",
+  // No engine forced here on purpose: works with whichever of Docker/Podman/etc.
+  // is on your PATH. Override containers.containerClient / docker.dockerPath /
+  // dev.containers.dockerPath locally if you want to pin one.
   "yaml.schemas": {
     "kubernetes": "deploy/k8s/*.yaml"
-  },
-  "containers.containerCommand": "podman"
+  }
 }

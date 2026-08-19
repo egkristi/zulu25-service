@@ -80,9 +80,10 @@ jobs:
           node-version: "22"
 
       # Only builds the image (.devcontainer/Dockerfile) - it does not create/run
-      # the container, so the Podman-only runArgs/mounts (up-time properties) are
-      # never exercised here. This just catches the devcontainer silently rotting
-      # (apt package or base image changes) without needing Podman on the runner.
+      # the container, so container-creation-time config (mounts, the socket
+      # feature setup) is never exercised here. This just catches the devcontainer
+      # silently rotting (apt package or base image changes) without needing a
+      # non-Docker engine on the runner.
       - name: Build the dev container image
         run: |
           npm install -g @devcontainers/cli

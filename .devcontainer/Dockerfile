@@ -11,14 +11,13 @@ COPY --from=maven-dist /usr/share/maven /opt/maven
 ENV PATH="/opt/maven/bin:${PATH}"
 
 # git and curl are what the Java extension pack and most workflows reach for.
-# podman here is the client only - it talks to the host's Podman socket (mounted
-# via devcontainer.json + link-podman-socket.sh), so no nested runtime/storage
-# is needed inside this image.
+# The docker CLI itself comes from the docker-outside-of-docker feature (see
+# devcontainer.json), not from here.
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends git curl ca-certificates less procps podman && \
+    apt-get install -y --no-install-recommends git curl ca-certificates less procps && \
     rm -rf /var/lib/apt/lists/*
 
-# Non-root user. updateRemoteUserUID / --userns=keep-id lines it up with the host.
+# Non-root user. updateRemoteUserUID (devcontainer.json) lines the UID up with the host.
 ARG USERNAME=vscode
 ARG USER_UID=1000
 ARG USER_GID=${USER_UID}

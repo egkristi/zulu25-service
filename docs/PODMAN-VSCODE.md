@@ -73,9 +73,9 @@ curl "localhost:8080/api/greet?name=Erling"
 Via `make`:
 
 ```bash
-make image-podman      # bygg med podman
-make run-podman        # bygg + kjør på :8080
-make smoke             # treff endepunktene
+make image ENGINE=podman      # bygg med podman
+make run-image ENGINE=podman  # bygg + kjør på :8080
+make smoke                    # treff endepunktene
 ```
 
 Podman leter etter `Containerfile` først og faller tilbake på `Dockerfile`, så
@@ -181,7 +181,9 @@ fra kommandopaletten etter endring.
 
 ### Peke VS Code mot Podman i stedet for Docker
 
-Ligger allerede i `.vscode/settings.json`:
+Repoet tvinger ikke noe motorvalg her – `.vscode/settings.json` har bevisst
+ingen `containers.containerClient`/`docker.dockerPath`. Vil du at VS Code alltid
+skal bruke Podman i stedet for å plukke opp `docker` fra PATH, legg selv til:
 
 ```jsonc
 "containers.containerClient": "com.microsoft.visualstudio.containers.podman",
@@ -191,17 +193,9 @@ Ligger allerede i `.vscode/settings.json`:
 ```
 
 `containers.*` gjelder den nye Container Tools-utvidelsen, `docker.*` den eldre
-Docker-utvidelsen – behold begge så virker det uansett hvilken du har.
-Verktøy som snakker Docker-API-et direkte trenger i tillegg en socket:
-
-```bash
-systemctl --user enable --now podman.socket
-export DOCKER_HOST="unix://$XDG_RUNTIME_DIR/podman/podman.sock"
-
-# macOS
-podman machine start
-export DOCKER_HOST="unix://$(podman machine inspect --format '{{.ConnectionInfo.PodmanSocket.Path}}')"
-```
+Docker-utvidelsen – sett begge så virker det uansett hvilken du har. Skal du
+bruke containeren fra en dev container også, se "Bygge/kjøre containerimaget
+fra inne i dev containeren" lenger ned – samme socket-mekanisme gjelder der.
 
 ### Kjøre og debugge
 
@@ -228,46 +222,52 @@ Vil du ha hele toolchainen i containeren i stedet for på laptopen, ligger den i
 `.devcontainer/` – Zulu 25 JDK + Maven, samme Maven-triks som produksjonsbygget.
 Ctrl/Cmd+Shift+P → *Dev Containers: Reopen in Container*.
 
-Med Podman kreves `dev.containers.dockerPath: podman` (allerede satt) og
-`--userns=keep-id` (allerede i `devcontainer.json`). På SELinux-systemer sørger
-`Z`-flagget i `workspaceMount` for riktig labeling. Går det galt, sjekk
+Dette virker med Docker eller Podman som vertsmotor uten noen endring i
+`devcontainer.json` – se neste avsnitt. På SELinux-systemer sørger `Z`-flagget
+i `workspaceMount` for riktig labeling. Går det galt, sjekk
 *Dev Containers: Show Container Log*.
 
 ### Bygge/kjøre containerimaget fra inne i dev containeren
 
 Dev containeren har kun Java/Maven-verktøyet – den kjører ikke sin egen
-Podman-instans. Nøstede containere (Podman-i-Podman) er skjøre: rootless-i-rootless,
-cgroups v2 og lagringsdrivere virker ikke alltid i et nøstet miljø.
+container-motor. Nøstede containere (motor-i-motor) er skjøre: rootless-i-rootless,
+cgroups v2 og lagringsdrivere virker ikke alltid i et nøstet miljø, og å anta én
+bestemt motor der ville gjort dev containeren opinionert igjen.
 
-I stedet er dette satt opp som *Podman-outside-of-Podman*: `devcontainer.json`
-mounter hostens rootless Podman-socket inn i containeren, og
-`.devcontainer/Dockerfile` installerer bare Podman-klienten. `podman build`/
-`podman run` kjørt fra en integrert terminal i dev containeren snakker dermed
-med Podman-tjenesten på hosten – de samme kommandoene som ellers i denne guiden
-virker uendret (`CONTAINER_HOST` er allerede satt, så ingen `--remote`-flagg
-trengs).
+I stedet er dette satt opp som *Docker-outside-of-Docker*
+(`ghcr.io/devcontainers/features/docker-outside-of-docker` i `devcontainer.json`):
+den installerer kun `docker`-klienten og en bind-mount som peker mot en socket.
+`docker build`/`docker run` (eller `podman --remote` om du foretrekker det) kjørt
+fra en integrert terminal i dev containeren snakker dermed med motoren på
+hosten – hvilken motor det faktisk er, er irrelevant så lenge den eksponerer en
+Docker-API-kompatibel socket.
 
-Forutsetninger på hosten:
+Forutsetninger på hosten (Docker trenger normalt ingenting ekstra; Podman må
+eksplisitt eksponere en socket):
 
 ```bash
-# Linux
+# Linux, med Podman
 systemctl --user enable --now podman.socket
 
-# macOS
+# macOS, med Podman
 podman machine start
 ```
 
-`.devcontainer/link-podman-socket.sh` kjører automatisk før containeren startes
-(`initializeCommand`) og peker en repo-lokal, gitignored symlink
-(`.devcontainer/.podman-socket/podman.sock`) mot riktig socket for plattformen.
-Mangler socket-en, bygger dev containeren fortsatt – `podman` inni den feiler
-bare med en tydelig tilkoblingsfeil (`postCreateCommand` varsler om dette), og
-du faller tilbake til å bygge på hosten som vanlig.
+`.devcontainer/link-container-socket.sh` kjører automatisk før containeren
+startes (`initializeCommand`) og prøver en liste kjente socket-stier – Docker
+Desktop, rootless Docker, Podman, Colima – i tur og orden, og peker en
+repo-lokal, gitignored symlink (`.devcontainer/.container-socket/docker.sock`)
+mot den første som faktisk finnes. Finner den ingen, bygger dev containeren
+fortsatt – `docker` inni den feiler bare med en tydelig tilkoblingsfeil
+(`postCreateCommand` varsler om dette), og du faller tilbake til å bygge på
+hosten som vanlig.
 
-Merk: siden Podman-tjenesten kjører på hosten, havner bygde images og kjørende
-containere også der – `podman ps`/`podman images` på hosten viser dem, og
+Merk: siden motoren kjører på hosten, havner bygde images og kjørende
+containere også der – `docker ps`/`podman ps` på hosten viser dem, og
 `-p 8080:8080` publiserer på hostens nettverk (på macOS videreformidlet gjennom
-`podman machine` som vanlig).
+Docker Desktop eller `podman machine` som vanlig). Se også feature-siden sine
+begrensninger rundt bind mounts av arbeidsmappen – de gjelder ikke her siden
+`docker build .` strømmer build-konteksten i stedet for å referere en sti.
 
 ---
 

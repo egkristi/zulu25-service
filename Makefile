@@ -78,14 +78,6 @@ up: ## Start via compose (docker compose / podman compose)
 down: ## Stop the compose stack
 	$(COMPOSE) down
 
-.PHONY: image-podman
-image-podman: ## Build the image with rootless podman
-	$(MAKE) image ENGINE=podman
-
-.PHONY: run-podman
-run-podman: ## Build and run with rootless podman on $(PORT)
-	$(MAKE) run-image ENGINE=podman
-
 .PHONY: deploy
 deploy: ## Apply the Kubernetes manifests to the current context
 	kubectl apply -k deploy/k8s

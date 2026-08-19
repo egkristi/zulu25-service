@@ -4,11 +4,6 @@
     "dockerfile": "Dockerfile"
   },
 
-  // Rootless Podman only: "--userns=keep-id" is Podman-specific syntax (paired
-  // with dev.containers.dockerPath: podman in .vscode/settings.json) and maps
-  // the container user to your own UID so files created in the workspace stay
-  // writable on the host. Plain Docker does not understand this flag.
-  "runArgs": ["--userns=keep-id"],
   "containerUser": "vscode",
   "updateRemoteUserUID": true,
 
@@ -16,18 +11,17 @@
   "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind,Z",
   "workspaceFolder": "/workspace",
 
-  // Podman-outside-of-Podman: link-podman-socket.sh (runs on the host) points a
-  // repo-local symlink at the host's rootless Podman API socket, bind-mounted
-  // below. Only the podman client is installed in the image (see Dockerfile),
-  // so `podman build`/`podman run` in an integrated terminal talk to the host
-  // engine instead of nesting a second container runtime inside this one.
-  "initializeCommand": "bash .devcontainer/link-podman-socket.sh",
-  "mounts": [
-    "source=${localWorkspaceFolder}/.devcontainer/.podman-socket/podman.sock,target=/run/podman-host.sock,type=bind"
-  ],
-  "containerEnv": {
-    "CONTAINER_HOST": "unix:///run/podman-host.sock"
+  // Docker-outside-of-Docker: talks to whatever Docker-API-compatible socket
+  // the host exposes (Docker, Podman, Colima, ...) instead of nesting a second
+  // container runtime inside this one. link-container-socket.sh (host-side)
+  // finds it; the mount below feeds it to the feature's expected path.
+  "features": {
+    "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {}
   },
+  "initializeCommand": "bash .devcontainer/link-container-socket.sh",
+  "mounts": [
+    "source=${localWorkspaceFolder}/.devcontainer/.container-socket/docker.sock,target=/var/run/docker-host.sock,type=bind"
+  ],
 
   "forwardPorts": [8080],
   "portsAttributes": {
@@ -40,7 +34,8 @@
         "vscjava.vscode-java-pack",
         "redhat.vscode-yaml",
         "redhat.vscode-xml",
-        "editorconfig.editorconfig"
+        "editorconfig.editorconfig",
+        "ms-azuretools.vscode-containers"
       ],
       "settings": {
         "java.configuration.runtimes": [
@@ -50,5 +45,5 @@
     }
   },
 
-  "postCreateCommand": "mvn -B -ntp -DskipTests dependency:go-offline && (podman version >/dev/null 2>&1 && echo 'Podman (via host socket) is reachable.' || echo 'Podman socket not reachable yet - see docs/PODMAN-VSCODE.md (Dev container section).')"
+  "postCreateCommand": "mvn -B -ntp -DskipTests dependency:go-offline && (docker version >/dev/null 2>&1 && echo 'Container engine reachable from inside the devcontainer.' || echo 'No container engine reachable yet - image builds/runs still work from the host. See docs/PODMAN-VSCODE.md.')"
 }
